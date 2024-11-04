@@ -6,7 +6,10 @@ services:
       mode: replicated
       replicas: 6
     labels:
-      - "traefik.http.routers.whoami.rule=Host(`pwjs.localhost`)"
+      - "traefik.http.routers.appservice.rule=Host(`pwjs.localhost`)"
+
+    volumes:
+      - ./data/db.sqlite3:/app/db.sqlite3
 
   reverse-proxy:
     image: traefik:v3.1
