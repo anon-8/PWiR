@@ -1,15 +1,34 @@
 services:
-  app-service:
+  app-migrate: &anchor
     build: .
+
+    entrypoint: ["python", "./manage.py", "migrate"]
+
+    volumes:
+      - ./data/db.sqlite3:/app/db.sqlite3
+
+  app-createsuperuser:
+    <<: *anchor
+    environment:
+      DJANGO_SUPERUSER_PASSWORD: admin123
+
+    entrypoint:
+      ["python", "./manage.py", "createsuperuser", "--noinput", "--username", "admin", "--email", "admin@gmail.com"]
+
+    depends_on:
+      - app-migrate
+  app-service:
+    <<: *anchor
+
+    entrypoint: ["python", "./manage.py", "runserver", "0.0.0.0:8000"]
 
     deploy:
       mode: replicated
       replicas: 6
     labels:
       - "traefik.http.routers.appservice.rule=Host(`pwjs.localhost`)"
-
-    volumes:
-      - ./data/db.sqlite3:/app/db.sqlite3
+    depends_on:
+      - app-migrate
 
   reverse-proxy:
     image: traefik:v3.1
@@ -19,3 +38,11 @@ services:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+
+    db:
+      image: postgres
+
+      environment:
+        POSTGRES_PASSWORD: postgres
+        POSTGRES_USER: postgres
+        POSTGRES_DB: postgres
