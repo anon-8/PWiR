@@ -4,35 +4,60 @@ services:
 
     entrypoint: ["python", "./manage.py", "migrate"]
 
-    volumes:
-      - ./data/db.sqlite3:/app/db.sqlite3
+    environment:
+      DB_PASSWORD: &db_password ${DB_PASSWORD:?DB_PASSWORD not provided}
+      DB_USERNAME: &db_username ${DB_USERNAME:?DB_USERNAME not provided}
+      DB_NAME: &db_name ${DB_NAME:?DB_NAME not provided}
+      DB_HOST: ${DB_HOST:?DB_HOST not provided}
+      DEBUG: ${DJANGO_DEBUG:-0}
+
+    # volumes:
+    #   - ./data/db.sqlite3:/app/db.sqlite3
     depends_on:
-      - db
+      db:
+        condition: service_healthy
 
   app-createsuperuser:
     <<: *anchor
     environment:
-      DJANGO_SUPERUSER_PASSWORD: admin123
+      DJANGO_SUPERUSER_PASSWORD: ${DJANGO_SUPERUSER_PASSWORD?:DJANGO_SUPERUSER_PASSWORD not provided}
 
     entrypoint:
-      ["python", "./manage.py", "createsuperuser", "--noinput", "--username", "admin", "--email", "admin@gmail.com"]
+      [
+        "python",
+        "./manage.py",
+        "createsuperuser",
+        "--noinput",
+        "--username",
+        "${DJANGO_SUPERUSER_NAME?:DJANGO_SUPERUSER_NAME not provided}",
+        "--email",
+        "${DJANGO_SUPERUSER_EMAIL?:DJANGO_SUPERUSER_EMAIL not provided}",
+      ]
 
     depends_on:
-      - app-migrate
-      - db
+      app-migrate:
+        condition: service_completed_successfully
+
   app-service:
     <<: *anchor
+
+    healthcheck:
+      test: ["CMD", "curl", "-I", "localhost:8000"]
+      interval: 5s
+      timeout: 5s
+      retries: 50
+      start_period: 2s
 
     entrypoint: ["python", "./manage.py", "runserver", "0.0.0.0:8000"]
 
     deploy:
       mode: replicated
-      replicas: 6
+      replicas: 1
     labels:
       - "traefik.http.routers.appservice.rule=Host(`pwjs.localhost`)"
     depends_on:
-      - app-migrate
-      - db
+      app-migrate:
+        condition: service_completed_successfully
 
   reverse-proxy:
     image: traefik:v3.1
@@ -47,6 +72,13 @@ services:
     image: postgres
 
     environment:
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_USER: postgres
-      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: *db_password
+      POSTGRES_USER: *db_username
+      POSTGRES_DB: *db_name
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", *db_name]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 80s
